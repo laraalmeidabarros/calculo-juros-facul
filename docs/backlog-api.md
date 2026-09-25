@@ -30,7 +30,7 @@ e pode ser consultada depois, de forma paginada.
 | **T-04** | Cronograma de amortização com **datas reais** de vencimento | Função pura |
 | **T-05** | Encargos e tributos — **IOF + tarifa de cadastro** | Função pura |
 | **T-06** | **CET** (Res. 4.881) e **demonstrativo** na resposta | Função pura |
-| **T-07** | `POST /api/operacoes` — recebe o pedido, simula e **grava** a operação | Endpoint + banco |
+| **T-07** | `POST /api/operacoes` — recebe o pedido, simula e **grava** a operação (banco e repositório já prontos) | Endpoint + banco |
 | **T-08** | `GET /api/operacoes` (paginado) e `GET /api/operacoes/:id` | Endpoint |
 
 "Função pura" = uma função JavaScript que recebe parâmetros e devolve um resultado, sem tocar em
@@ -47,10 +47,12 @@ T-00 Preparar o ambiente (todo mundo, antes de qualquer coisa)
  │               ├─ T-04 cronograma ── T-05 encargos ── T-06 CET ──┤
  ├─ T-03 SAC ────┘                                                 │
  │                                                                 ├── T-07 POST /operacoes ── T-08 GET /operacoes
- └─ T-07 Parte A (instalar MySQL e criar a tabela) ────────────────┘
+ └─ T-07 Parte A (banco) — ENTREGUE pela equipe de banco ──────────┘
 ```
 
-- **Podem começar juntas, em paralelo:** T-01, T-02, T-03 e a Parte A da T-07.
+- **Podem começar juntas, em paralelo:** T-01, T-02, T-03. A Parte A da T-07 (banco) já foi
+  entregue pela equipe de banco (`docs/backlog-db.md`, D-01/D-02/D-04); cada pessoa só precisa
+  rodar o banco na própria máquina (ver T-07 Parte A).
 - **T-04** precisa que T-02 **ou** T-03 esteja pronta (usa o formato de parcelas delas).
 - **T-05** precisa da T-04 (usa os dias corridos). **T-06** precisa da T-04 e T-05.
 - **T-07** precisa de tudo acima. **T-08** precisa da T-07.
@@ -61,7 +63,7 @@ Não reabra estas decisões durante a implementação — se discordar, levante 
 
 | Tema | Decisão |
 |---|---|
-| Stack | Node.js **20 LTS ou mais novo** (recomendado 22), Express 5 (já no repo), **MySQL 8** acessado com a biblioteca `mysql2`. Sem ORM, sem ferramenta de migrations: um único arquivo `db/schema.sql`. |
+| Stack | Node.js **20 LTS ou mais novo** (recomendado 22), Express 5 (já no repo), **MySQL 8** acessado com a biblioteca `mysql2`. Sem ORM, sem ferramenta de migrations: `db/schema.sql` (estrutura, 3 tabelas) e `db/seed.sql` (carga inicial), rodados com `npm run schema` e `npm run seed`. Ambos são mantidos pela **equipe de banco** (`docs/backlog-db.md`). |
 | Modalidades | **6 modalidades PF com parcelas** (lista na T-01). Cheque especial e cartão rotativo ficam **fora** — o CET deles segue outro caminho (art. 6º da Res. 4.881) e não tem cronograma de parcelas. |
 | Convenção de taxa | Taxa **efetiva mensal, capitalização composta** (mesma convenção da série do BCB, ver `docs/research_tabela-juros-brasil_20260831.md` §2.5). |
 | Unidade da taxa | **Fora** de `src/lib/` (catálogo, entrada e saída da API) a taxa é em **porcentagem** (`1.85` = 1,85% a.m.). **Dentro** de `src/lib/` a taxa é sempre **decimal** (`0.0185`). A conversão (`/ 100`) acontece em um único lugar: o serviço da T-07. |
@@ -78,14 +80,17 @@ Não reabra estas decisões durante a implementação — se discordar, levante 
 ```
 calculo-juros/
 ├─ index.js                      ← sobe o servidor (já existe)
-├─ package.json                  ← ganha "test" e "--env-file" (T-02, T-07)
-├─ .env                          ← senhas do banco — NUNCA vai para o git (T-07)
-├─ .env.example                  ← modelo do .env, sem senha real (T-07)
-├─ db/
-│  └─ schema.sql                 ← cria banco e tabela (T-07)
+├─ package.json                  ← "test" (T-02); "--env-file", "schema" e "seed" já existem (equipe de banco)
+├─ .env                          ← senhas do banco — NUNCA vai para o git (você cria a partir do .env.example)
+├─ .env.example                  ← modelo do .env (já existe)
+├─ db/                           ← TUDO aqui é da equipe de banco (não mexer)
+│  ├─ schema.sql                 ← cria o banco e as 3 tabelas: modalidades, faixas_juros, operacoes
+│  ├─ seed.sql                   ← carga inicial: 6 modalidades + 30 faixas de juros
+│  ├─ schema.js / seed.js        ← rodam os .sql: npm run schema / npm run seed
+│  └─ reset.sql                  ← apaga o banco inteiro (cuidado)
 └─ src/
    ├─ app.js                     ← Express, middlewares, tratador de erros (T-01)
-   ├─ db.js                      ← conexão com o MySQL (T-07)
+   ├─ db.js                      ← conexão com o MySQL (já existe — equipe de banco)
    ├─ dados/                     ← "tabelas" estáticas: catálogo e parâmetros
    │  ├─ modalidades.js          (T-01)
    │  ├─ parametros.js           (T-05)
@@ -103,11 +108,13 @@ calculo-juros/
    │  ├─ validaEntrada.js        (T-07)
    │  ├─ taxa.js                 (T-07)
    │  └─ simulacao.js            (T-07)
-   ├─ repositorios/              ← tudo que fala SQL fica aqui
-   │  └─ operacoes.js            (T-07, T-08)
+   ├─ repositorios/              ← tudo que fala SQL fica aqui (já existe — equipe de banco)
+   │  ├─ modalidades.js          listarModalidades, buscarModalidade (uso futuro)
+   │  ├─ faixasJuros.js          listarFaixas, buscarFaixaPorScore (uso futuro)
+   │  └─ operacoes.js            existeIdentificador, salvar, buscarPorId, listar (T-07 usa; T-08 usa)
    └─ routes/                    ← endpoints HTTP (só recebem, validam e respondem)
       ├─ index.js                ← registro central (já existe)
-      ├─ health.js               ← já existe; ganha checagem do banco na T-07
+      ├─ health.js               ← já existe, já checa o banco
       ├─ juros.js                ← legado, não mexer
       ├─ modalidades.js          (T-01)
       └─ operacoes.js            (T-07, T-08)
@@ -1102,11 +1109,14 @@ referência). Confira também que a soma dos 4 `valor` é igual a `totalDevido` 
 
 ## T-07 — `POST /api/operacoes`: simular e gravar a operação
 
-**Depende de:** T-01 a T-06 (Partes B–F) — a **Parte A** (banco) pode começar no dia 1.
-**Arquivos:** cria `db/schema.sql`, `.env`, `.env.example`, `src/db.js`, `src/dados/faixasRisco.js`,
-`src/servicos/taxa.js`, `src/servicos/validaEntrada.js`, `src/servicos/simulacao.js`,
-`src/repositorios/operacoes.js`, `src/routes/operacoes.js`; altera `package.json`, `.gitignore`,
-`index.js`, `src/routes/health.js`, `src/routes/index.js`.
+**Depende de:** T-01 a T-06 (Partes B–D e F).
+**Arquivos:** cria `src/dados/faixasRisco.js`, `src/servicos/taxa.js`, `src/servicos/validaEntrada.js`,
+`src/servicos/simulacao.js`, `src/routes/operacoes.js`; altera `src/routes/index.js`.
+
+> **O que a equipe de banco já entregou (não refaça):** a **Parte A** (MySQL, `db/schema.sql`,
+> `db/seed.sql`, `.env.example`, `mysql2`, `src/db.js`, `/api/health` com banco) e a **Parte E**
+> (`src/repositorios/operacoes.js` completo, inclusive a função `listar` da T-08). Neste guia as
+> Partes A e E ficaram só como **leitura**: o que você precisa saber para usar o que já existe.
 
 É a tarefa maior. Está dividida em partes (A a F) que podem ser feitas por pessoas diferentes,
 **na ordem**, cada parte com seu commit.
@@ -1209,39 +1219,85 @@ com score 720 → 4,50 + 0,50 = **5,00** (teto 12,00 não atua).
 **Conversão de unidade.** O catálogo está em **%** (`1.85`). As funções de `src/lib` querem
 **decimal**. A conversão `taxaFinalMes / 100` acontece **uma única vez**, no serviço de simulação.
 
-**Banco de dados.** Uma tabela `operacoes`. As colunas "planas" (`valor`, `score`, `cet_price_ano`…)
-servem para a **listagem** da T-08 ser leve; a coluna `resultado` (tipo `JSON`) guarda a
-resposta completa para o `GET /:id`. Não normalizamos parcelas em outra tabela — fora do escopo.
+**Banco de dados.** O banco `calculo_juros` tem **3 tabelas** (`db/schema.sql`, mantido pela
+equipe de banco):
+
+| Tabela | O que guarda | Quem usa |
+|---|---|---|
+| `modalidades` | catálogo das modalidades (chave primária = `codigo`) | carga inicial do seed; a API ainda lê o catálogo de `src/dados/modalidades.js` |
+| `faixas_juros` | taxa por modalidade × faixa de score | carga inicial do seed; uso futuro da API |
+| `operacoes` | cada operação simulada | **T-07 grava, T-08 lê** |
+
+Na tabela `operacoes`, as colunas "planas" (`valor`, `score`, `cet_price_ano`…) servem para a
+**listagem** da T-08 ser leve; a coluna `resultado` (tipo `JSON`) guarda a resposta completa para
+o `GET /:id`. Não normalizamos parcelas em outra tabela — fora do escopo.
+
+Dois detalhes do schema real que afetam a API:
+
+- A coluna da modalidade chama-se **`modalidade_codigo`** (não `modalidade`). No JSON da API o
+  campo continua sendo `modalidade`; a tradução é feita no repositório.
+- `modalidade_codigo` é **chave estrangeira** para `modalidades.codigo`. Ou seja: **só é
+  possível gravar uma operação se o código da modalidade existir na tabela `modalidades`**. Por
+  isso o `npm run seed` é obrigatório antes de testar o `POST`, e os códigos do seed precisam ser
+  **os mesmos** do catálogo da T-01 (`CONSIGNADO_INSS`, `CREDITO_PESSOAL`…). Se o INSERT falhar
+  com `ER_NO_REFERENCED_ROW_2`, o seed da sua máquina está desatualizado ou com códigos
+  diferentes — avise a equipe de banco; não "resolva" removendo a chave estrangeira.
 
 **Variáveis de ambiente.** Senha de banco **nunca** vai para o código nem para o git. Fica no
 arquivo `.env` (ignorado pelo git), lido pelo Node com a flag `--env-file=.env`. O `.env.example`
 mostra o formato sem valores reais.
 
-### Parte A — Banco de dados (pode começar no dia 1)
+### Parte A — Banco de dados (já entregue pela equipe de banco; rode na sua máquina)
 
-**A1. Instale o MySQL 8.** Duas opções:
-- **Docker** (se já tiver instalado):
-  `docker run --name mysql-juros -e MYSQL_ROOT_PASSWORD=senha123 -p 3306:3306 -d mysql:8`
-- **Instalador:** <https://dev.mysql.com/downloads/installer/> → "Developer Default" (instala o
-  servidor e o **MySQL Workbench**, a interface gráfica). Anote a senha do `root`.
+Nada aqui é para programar. A equipe de banco já criou `db/schema.sql`, `db/seed.sql`,
+`src/db.js`, `.env.example`, instalou o `mysql2` e fez o `/api/health` checar o banco. O que
+**você** precisa fazer é deixar o banco funcionando no seu computador:
 
-**A2. Crie `db/schema.sql`:**
+**A1. Instale o MySQL 8** (se ainda não tem) pelo instalador
+<https://dev.mysql.com/downloads/installer/> → "Developer Default" (instala o servidor e o
+**MySQL Workbench**). Anote a senha do `root`. Detalhes em `docs/backlog-db.md`, D-00.
+
+**A2. Crie o `.env`.** Copie `.env.example` para `.env` e coloque a senha real do seu MySQL:
+
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=sua-senha-aqui
+DB_NAME=calculo_juros
+PORT=3000
+```
+
+O `.env` já está no `.gitignore`. Rode `git status` e confirme que ele **não** aparece.
+
+**A3. Instale as dependências e crie o banco com dados:**
+
+```
+npm install
+npm run schema     # cria o banco calculo_juros e as 3 tabelas (pode rodar várias vezes)
+npm run seed       # carrega as 6 modalidades e as 30 faixas de juros (idem)
+```
+
+O `schema` imprime `tabelas: faixas_juros, modalidades, operacoes` e o `seed` imprime
+`modalidades: 6` e `faixas_juros: 30`. **Sem o seed, o `POST /api/operacoes` não grava nada**
+(ver "Banco de dados" em Conceitos: chave estrangeira para `modalidades`).
+
+**A4. Confira:** `npm run dev` → `GET /api/health` → `{ "status": "ok", "banco": "ok" }`. Se vier
+`503`, o MySQL está parado ou o `.env` está errado.
+
+**A5. Conheça a tabela que a T-07 usa.** É esta (trecho do `db/schema.sql` real — **não** edite
+o arquivo; se precisar de uma coluna nova, peça à equipe de banco):
 
 ```sql
--- Cria o banco e a tabela de operações. Pode ser executado várias vezes sem erro.
-CREATE DATABASE IF NOT EXISTS calculo_juros
-  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE calculo_juros;
-
 CREATE TABLE IF NOT EXISTS operacoes (
   id                      INT UNSIGNED      NOT NULL AUTO_INCREMENT,
   identificador           VARCHAR(60)       NOT NULL,
-  modalidade              VARCHAR(40)       NOT NULL,
+  modalidade_codigo       VARCHAR(40)       NOT NULL,   -- FK -> modalidades.codigo
   valor                   DECIMAL(15,2)     NOT NULL,
   score                   SMALLINT UNSIGNED NOT NULL,
   prazo_meses             SMALLINT UNSIGNED NOT NULL,
   data_liberacao          DATE              NOT NULL,
-  primeiro_relacionamento TINYINT(1)        NOT NULL DEFAULT 0,
+  primeiro_relacionamento BOOLEAN           NOT NULL DEFAULT FALSE,
   faixa_risco             CHAR(1)           NOT NULL,
   taxa_final_mes          DECIMAL(8,4)      NOT NULL,
   cet_price_ano           DECIMAL(8,2)      NOT NULL,
@@ -1249,80 +1305,20 @@ CREATE TABLE IF NOT EXISTS operacoes (
   resultado               JSON              NOT NULL,   -- resposta completa (entrada, taxa, simulacoes)
   criado_em               DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_operacoes_identificador (identificador)
+  UNIQUE KEY uk_operacoes_identificador (identificador),
+  CONSTRAINT fk_operacoes_modalidade FOREIGN KEY (modalidade_codigo) REFERENCES modalidades (codigo),
+  CONSTRAINT ck_operacoes_valor CHECK (valor > 0),
+  CONSTRAINT ck_operacoes_score CHECK (score <= 1000)
 );
 ```
 
-Convenção: no banco, nomes em `snake_case` (`prazo_meses`); no JavaScript, `camelCase`
-(`prazoMeses`). O repositório (Parte E) faz a tradução.
+Convenção: no banco, nomes em `snake_case` (`prazo_meses`, `modalidade_codigo`); no JavaScript,
+`camelCase` (`prazoMeses`, `modalidade`). O repositório (Parte E) faz a tradução.
 
-**A3. Execute o script.** No **Workbench**: File → Open SQL Script → `db/schema.sql` → raio
-(Execute). Pela linha de comando: `mysql -u root -p` e, dentro do prompt do MySQL,
-`source db/schema.sql;`. Confira com `SHOW TABLES FROM calculo_juros;`.
-
-**A4. Variáveis de ambiente.** Crie `.env.example` (vai para o git):
-
-```
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=coloque-a-senha-aqui
-DB_NAME=calculo_juros
-PORT=3000
-```
-
-Copie para `.env` e preencha a senha real. Adicione a linha `.env` ao `.gitignore` **antes**
-do primeiro commit desta parte. Rode `git status` e confirme que `.env` **não** aparece.
-
-**A5. Instale a biblioteca e ajuste os scripts.** `npm install mysql2`. No `package.json`:
-
-```json
-"scripts": {
-  "start": "node --env-file=.env index.js",
-  "dev": "node --watch --env-file=.env index.js",
-  "test": "node --test"
-},
-"engines": { "node": ">=20.6" }
-```
-
-Em `index.js`, troque `const PORT = 3000;` por `const PORT = Number(process.env.PORT ?? 3000);`.
-
-**A6. Crie `src/db.js`** (pool de conexões — copie como está e leia os comentários):
-
-```js
-import mysql from 'mysql2/promise';
-
-// Um "pool" mantém algumas conexões abertas e reaproveita — nunca abra uma conexão por requisição.
-export const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 3306),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  decimalNumbers: true, // sem isto, colunas DECIMAL voltam como STRING ("10000.00")
-  dateStrings: true,    // sem isto, DATE volta como objeto Date com fuso — queremos 'AAAA-MM-DD'
-});
-```
-
-**A7. Faça o `/api/health` checar o banco.** Em `src/routes/health.js`:
-
-```js
-import { pool } from '../db.js';
-// ...
-router.get('/', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.json({ status: 'ok', mensagem: 'API está ok', banco: 'ok' });
-  } catch (err) {
-    console.error(err);
-    res.status(503).json({ status: 'erro', mensagem: 'API está ok, mas o banco não respondeu', banco: 'erro' });
-  }
-});
-```
-
-Teste: `npm run dev` → `GET /api/health` → `banco: "ok"`. Pare o MySQL → `503`. **Commit da Parte A.**
+**A6. Como o `src/db.js` já está configurado** (só para você entender o que recebe):
+`decimalNumbers: true` faz colunas `DECIMAL` voltarem como **número** (sem isso, `"10000.00"`
+string); `dateStrings: true` faz `DATE` voltar como `'AAAA-MM-DD'` (sem isso, objeto `Date` com
+fuso). Nunca abra conexão por requisição — use sempre o `pool` exportado de lá.
 
 ### Parte B — Score → faixa → taxa
 
@@ -1425,27 +1421,26 @@ export function simulaOperacao(entrada) {
 `SAC.cet.anualPercentual 30.96`; `PRICE.cronograma.length 12`; `PRICE.cronograma[0].vencimento '2026-11-30'`.
 **Commit.**
 
-### Parte E — Repositório (SQL)
+### Parte E — Repositório (SQL) — já entregue pela equipe de banco
 
-**E1. Crie `src/repositorios/operacoes.js`.** Toda função é `async` e usa `pool.query(sql, [parametros])`.
-**Nunca** monte SQL concatenando strings com dados do usuário — use sempre `?` (evita SQL injection).
+O arquivo `src/repositorios/operacoes.js` **já existe e está completo** (D-05 do
+`docs/backlog-db.md`). Não reescreva. O que você precisa saber para usar na Parte F:
+
+| Função | Recebe | Devolve |
+|---|---|---|
+| `existeIdentificador(identificador)` | string | `true`/`false` |
+| `salvar({ identificador, entrada, taxa, simulacoes })` | a saída de `simulaOperacao` + o identificador | o `id` gerado |
+| `buscarPorId(id)` | número | a operação completa (`id`, `identificador`, `criadoEm`, `entrada`, `taxa`, `simulacoes`) ou `undefined` |
+| `listar({ pagina, tamanho })` | números | `{ itens, total }` — usada na T-08 |
+
+Como o `salvar` grava (leia para entender o mapeamento; repare em `modalidade_codigo`):
 
 ```js
-import { pool } from '../db.js';
-
-// Devolve true se já existe operação com esse identificador.
-export async function existeIdentificador(identificador) {
-  const [linhas] = await pool.query(
-    'SELECT id FROM operacoes WHERE identificador = ? LIMIT 1', [identificador]);
-  return linhas.length > 0;
-}
-
-// Grava a operação e devolve o id gerado.
 export async function salvar({ identificador, entrada, taxa, simulacoes }) {
   const [resultado] = await pool.query(
     `INSERT INTO operacoes
-       (identificador, modalidade, valor, score, prazo_meses, data_liberacao, primeiro_relacionamento,
-        faixa_risco, taxa_final_mes, cet_price_ano, cet_sac_ano, resultado)
+       (identificador, modalidade_codigo, valor, score, prazo_meses, data_liberacao,
+        primeiro_relacionamento, faixa_risco, taxa_final_mes, cet_price_ano, cet_sac_ano, resultado)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       identificador, entrada.modalidade, entrada.valor, entrada.score, entrada.prazoMeses,
@@ -1457,20 +1452,16 @@ export async function salvar({ identificador, entrada, taxa, simulacoes }) {
   );
   return resultado.insertId;
 }
-
-// Busca uma operação completa pelo id (ou undefined).
-export async function buscarPorId(id) {
-  const [linhas] = await pool.query(
-    'SELECT id, identificador, criado_em, resultado FROM operacoes WHERE id = ?', [id]);
-  if (linhas.length === 0) return undefined;
-  const linha = linhas[0];
-  // mysql2 já converte a coluna JSON em objeto; se em algum ambiente vier como texto, use JSON.parse.
-  const resultado = typeof linha.resultado === 'string' ? JSON.parse(linha.resultado) : linha.resultado;
-  return { id: linha.id, identificador: linha.identificador, criadoEm: linha.criado_em, ...resultado };
-}
 ```
 
-(A função `listar` fica para a T-08.) **Commit.**
+Consequências para a Parte D: `entrada.modalidade` tem de ser a **string do código**
+(`'CONSIGNADO_INSS'`), não o objeto do catálogo; `taxa.faixaRisco` e `taxa.taxaFinalMes` têm de
+existir; `simulacoes.PRICE.cet.anualPercentual` e `simulacoes.SAC.cet.anualPercentual` também.
+Se o `simulaOperacao` devolver outro formato, o `salvar` quebra.
+
+Toda função usa `pool.query(sql, [parametros])` com `?` — **nunca** monte SQL concatenando
+strings com dados do usuário (evita SQL injection). Se precisar de uma consulta nova, peça à
+equipe de banco ou adicione no mesmo estilo, com `?`.
 
 ### Parte F — A rota
 
@@ -1512,12 +1503,12 @@ export default router;
 | Score baixo | `score: 150`, identificador novo | `422 SCORE_INSUFICIENTE` (e **nada** gravado no banco) |
 | Sem data | sem `dataLiberacao`, identificador novo | `201` com `entrada.dataLiberacao` = hoje |
 
-Confira no Workbench: `SELECT id, identificador, taxa_final_mes, cet_price_ano FROM operacoes;`.
+Confira no Workbench: `SELECT id, identificador, modalidade_codigo, taxa_final_mes, cet_price_ano FROM operacoes;`.
 **Commit → PR.**
 
 ### Critérios de aceite
 
-- [ ] Parte A: `db/schema.sql` cria o banco do zero; `.env` fora do git; `/api/health` reporta o banco.
+- [ ] Parte A: `npm run schema` e `npm run seed` rodam sem erro na sua máquina; `.env` fora do git; `/api/health` devolve `banco: "ok"`.
 - [ ] Cenário feliz devolve `201` com os valores do Anexo A.5 e a linha aparece na tabela.
 - [ ] Os 5 cenários de erro devolvem o status e o `codigo` corretos, no formato padrão.
 - [ ] Erros de validação listam **todos** os problemas em `detalhes`.
@@ -1528,7 +1519,8 @@ Confira no Workbench: `SELECT id, identificador, taxa_final_mes, cet_price_ano F
 ### Armadilhas comuns
 
 - `npm run dev` falha com `.env: not found` → você não criou o `.env` a partir do `.env.example`.
-- `ER_ACCESS_DENIED_ERROR` → senha errada no `.env`. `ECONNREFUSED` → MySQL não está rodando.
+- `ER_ACCESS_DENIED_ERROR` → senha errada no `.env`. `ECONNREFUSED` → MySQL não está rodando. `ER_BAD_DB_ERROR` → faltou `npm run schema`.
+- `ER_NO_REFERENCED_ROW_2` no `POST` → o código da modalidade não existe na tabela `modalidades`: faltou `npm run seed`, ou o seed está com códigos diferentes do catálogo da T-01. Avise a equipe de banco; **não** remova a chave estrangeira.
 - `valor` volta como `"10000.00"` (string) → faltou `decimalNumbers: true` no pool.
 - `dataLiberacao` volta como `2026-10-29T03:00:00.000Z` → faltou `dateStrings: true`.
 - Resposta 500 em vez de 400/422 → você lançou `Error` comum em vez de `ErroDeNegocio`, ou o tratador de erros da T-01 não está registrado.
@@ -1538,7 +1530,7 @@ Confira no Workbench: `SELECT id, identificador, taxa_final_mes, cet_price_ano F
 
 ## T-08 — `GET /api/operacoes` (paginado) e `GET /api/operacoes/:id`
 
-**Depende de:** T-07. **Arquivos:** altera `src/repositorios/operacoes.js`, `src/routes/operacoes.js`.
+**Depende de:** T-07. **Arquivos:** altera `src/routes/operacoes.js` (o repositório já tem a função `listar`).
 
 ### O que é e por que existe
 
@@ -1592,14 +1584,15 @@ GET /api/operacoes/:id
 
 ### Passo a passo
 
-**1. Adicione ao repositório** (`src/repositorios/operacoes.js`):
+**1. Repositório — já pronto.** A função `listar({ pagina, tamanho })` já existe em
+`src/repositorios/operacoes.js` (entregue pela equipe de banco). Leia para entender o que ela
+devolve — repare que a coluna do banco é `modalidade_codigo`, mas o item sai como `modalidade`:
 
 ```js
-// Lista um resumo das operações, mais recentes primeiro, e o total para paginação.
 export async function listar({ pagina, tamanho }) {
   const offset = (pagina - 1) * tamanho;
-  const [itens] = await pool.query(
-    `SELECT id, identificador, modalidade, valor, score, prazo_meses, data_liberacao,
+  const [linhas] = await pool.query(
+    `SELECT id, identificador, modalidade_codigo, valor, score, prazo_meses, data_liberacao,
             faixa_risco, taxa_final_mes, cet_price_ano, cet_sac_ano, criado_em
        FROM operacoes
       ORDER BY id DESC
@@ -1607,10 +1600,14 @@ export async function listar({ pagina, tamanho }) {
     [tamanho, offset],          // precisam ser NÚMEROS, não strings
   );
   const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM operacoes');
-  // TODO: converta cada linha de snake_case para camelCase
-  //   ({ prazo_meses → prazoMeses, data_liberacao → dataLiberacao, faixa_risco → faixaRisco,
-  //     taxa_final_mes → taxaFinalMes, cet_price_ano → cetPriceAno, cet_sac_ano → cetSacAno, criado_em → criadoEm })
-  return { itens: /* linhas convertidas */, total };
+  const itens = linhas.map((l) => ({
+    id: l.id, identificador: l.identificador,
+    modalidade: l.modalidade_codigo,   // snake_case do banco -> nome do contrato da API
+    valor: l.valor, score: l.score, prazoMeses: l.prazo_meses, dataLiberacao: l.data_liberacao,
+    faixaRisco: l.faixa_risco, taxaFinalMes: l.taxa_final_mes,
+    cetPriceAno: l.cet_price_ano, cetSacAno: l.cet_sac_ano, criadoEm: l.criado_em,
+  }));
+  return { itens, total };
 }
 ```
 

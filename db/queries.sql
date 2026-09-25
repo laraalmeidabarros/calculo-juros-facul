@@ -5,7 +5,7 @@ USE calculo_juros;
 -- 1. BUSCA DE TAXA/FAIXA POR SCORE E MODALIDADE (ENQUADRAMENTO DE CRÉDITO)
 -- Exemplo: Cliente com Score 750 buscando empréstimo Consignado INSS
 -- ============================================================================
-SET @modalidade_busca = 'CREDITO_PESSOAL_CONSIGNE_INSS' COLLATE utf8mb4_unicode_ci;
+SET @modalidade_busca = 'CONSIGNADO_INSS' COLLATE utf8mb4_unicode_ci;
 SET @score_cliente = 750;
 
 SELECT 
@@ -54,7 +54,7 @@ SELECT
     taxa_ano,
     descricao
 FROM faixas_juros
-WHERE modalidade_codigo = 'VEICULOS_AUTOMOVEIS'
+WHERE modalidade_codigo = 'VEICULOS'
 ORDER BY faixa ASC;
 
 

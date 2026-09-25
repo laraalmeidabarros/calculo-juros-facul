@@ -1,67 +1,98 @@
+-- Carga inicial do banco calculo_juros: 6 modalidades + 30 faixas de juros.
+-- Pode ser executado várias vezes sem erro (INSERT ... ON DUPLICATE KEY UPDATE).
+-- Rode com: npm run seed   (depois do npm run schema)
+--
+-- Os códigos das modalidades são OS MESMOS do catálogo da API (src/dados/modalidades.js,
+-- backlog-api.md T-01). A tabela operacoes tem chave estrangeira para modalidades.codigo:
+-- se o código aqui for diferente do que a API envia, o POST /api/operacoes falha.
+--
+-- Fonte dos números: docs/backlog-db.md, Anexo A (P-03 / D-02).
+--   taxa_mes = MIN(taxa_base + spread, teto); spreads A 0,00 / B 0,50 / C 1,00 / D 2,00.
+--   taxa_ano = ((1 + taxa_mes/100)^12 - 1) * 100, 2 casas.
+--   taxa_referencia_bcb_mes = mediana da série do BCB 11-17/08/2026 (já inclui IOF; só comparação).
+
 USE calculo_juros;
 
--- 1) INSERÇÃO DAS 6 MODALIDADES
-INSERT INTO modalidades (
-  codigo, nome, modalidade_bcb, publico, regime_indexacao, 
-  teto_taxa_mes, taxa_referencia_bcb_mes, prazo_min_meses, prazo_max_meses, descricao, ativo
-) VALUES
-('CREDITO_PESSOAL_NON_CONSIGNE', 'Crédito Pessoal Não Consignado', 'Empréstimo pessoal não consignado', 'PF', 'PREFIXADO', 12.50, 6.20, 2, 72, 'Empréstimo pessoal sem garantia tradicional', TRUE),
-('CREDITO_PESSOAL_CONSIGNE_INSS', 'Consignado INSS', 'Empréstimo pessoal consignado INSS', 'PF', 'PREFIXADO', 2.14, 1.80, 6, 84, 'Crédito consignado para aposentados e pensionistas do INSS', TRUE),
-('CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'Consignado Servidor Público', 'Empréstimo pessoal consignado setor público', 'PF', 'PREFIXADO', 2.50, 1.95, 6, 96, 'Crédito consignado para servidores públicos federais, estaduais e municipais', TRUE),
-('CREDITO_PESSOAL_CONSIGNE_PRIVADO', 'Consignado CLT Privado', 'Empréstimo pessoal consignado setor privado', 'PF', 'PREFIXADO', 3.50, 2.60, 3, 60, 'Crédito consignado para trabalhadores de empresas privadas conveniadas', TRUE),
-('VEICULOS_AUTOMOVEIS', 'Financiamento de Veículos', 'Aquisição de veículos - Pessoas físicas', 'PF', 'PREFIXADO', 4.80, 1.90, 6, 60, 'Financiamento para aquisição de veículos automotores novos e usados', TRUE),
-('IMOBILIARIO_TP_TR', 'Financiamento Imobiliário (Pre-fixado/TR)', 'Financiamento imobiliário - Tabela Price/SAC com TR', 'PF', 'PREFIXADO', 1.50, 0.95, 24, 420, 'Financiamento imobiliário residencial com indexador TR', TRUE)
-AS novos_dados
-ON DUPLICATE KEY UPDATE 
-  nome = novos_dados.nome,
-  teto_taxa_mes = novos_dados.teto_taxa_mes;
+-- ---------------------------------------------------------------------
+-- 0) Limpeza: remove os códigos da primeira versão deste seed, que não
+--    batiam com o catálogo da API. Não faz nada num banco recém-criado.
+--    (Só falha se existir operação gravada com um desses códigos, o que
+--    não deveria acontecer: a API nunca os aceitou.)
+-- ---------------------------------------------------------------------
+DELETE FROM faixas_juros
+ WHERE modalidade_codigo IN ('CREDITO_PESSOAL_NON_CONSIGNE', 'CREDITO_PESSOAL_CONSIGNE_INSS',
+                             'CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'CREDITO_PESSOAL_CONSIGNE_PRIVADO',
+                             'VEICULOS_AUTOMOVEIS', 'IMOBILIARIO_TP_TR');
+DELETE FROM modalidades
+ WHERE codigo IN ('CREDITO_PESSOAL_NON_CONSIGNE', 'CREDITO_PESSOAL_CONSIGNE_INSS',
+                  'CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'CREDITO_PESSOAL_CONSIGNE_PRIVADO',
+                  'VEICULOS_AUTOMOVEIS', 'IMOBILIARIO_TP_TR');
 
--- 2) INSERÇÃO DAS 30 FAIXAS DE JUROS
-INSERT INTO faixas_juros (modalidade_codigo, faixa, score_min, score_max, taxa_mes, taxa_ano, descricao) VALUES
--- CREDITO_PESSOAL_NON_CONSIGNE
-('CREDITO_PESSOAL_NON_CONSIGNE', 'A', 801, 1000, 3.20, 45.93, 'Risco Excelente'),
-('CREDITO_PESSOAL_NON_CONSIGNE', 'B', 601, 800, 4.50, 69.59, 'Risco Bom'),
-('CREDITO_PESSOAL_NON_CONSIGNE', 'C', 401, 600, 6.80, 120.35, 'Risco Médio'),
-('CREDITO_PESSOAL_NON_CONSIGNE', 'D', 201, 400, 9.50, 203.88, 'Risco Alto'),
-('CREDITO_PESSOAL_NON_CONSIGNE', 'E', 0, 200, NULL, NULL, 'Reprovado por Risco'),
+-- ---------------------------------------------------------------------
+-- 1) Modalidades — mesmas 6 do catálogo da API (backlog-api.md, T-01).
+-- ---------------------------------------------------------------------
+INSERT INTO modalidades
+  (codigo, nome, modalidade_bcb, publico, regime_indexacao,
+   teto_taxa_mes, taxa_referencia_bcb_mes, prazo_min_meses, prazo_max_meses, descricao)
+VALUES
+  ('CREDITO_PESSOAL',    'Crédito pessoal não consignado',      'Crédito pessoal não consignado - Prefixado',      'PF', 'PREFIXADO', 12.00, 5.25,  3, 48, 'Empréstimo sem garantia, pago em parcelas mensais.'),
+  ('CONSIGNADO_INSS',    'Crédito pessoal consignado INSS',     'Crédito pessoal consignado INSS - Prefixado',     'PF', 'PREFIXADO',  1.85, 1.83,  6, 84, 'Parcelas descontadas diretamente do benefício do INSS. Teto regulatório CNPS (provisório).'),
+  ('CONSIGNADO_PUBLICO', 'Crédito pessoal consignado público',  'Crédito pessoal consignado público - Prefixado',  'PF', 'PREFIXADO',  2.50, 1.84,  6, 96, 'Parcelas descontadas em folha de servidor público.'),
+  ('CONSIGNADO_PRIVADO', 'Crédito pessoal consignado privado',  'Crédito pessoal consignado privado - Prefixado',  'PF', 'PREFIXADO',  4.50, 3.40,  6, 48, 'Parcelas descontadas em folha de empresa privada.'),
+  ('VEICULOS',           'Aquisição de veículos',               'Aquisição de veículos - Prefixado',               'PF', 'PREFIXADO',  3.00, 1.77, 12, 60, 'Financiamento de veículo com o bem em garantia.'),
+  ('OUTROS_BENS',        'Aquisição de outros bens',            'Aquisição de outros bens - Prefixado',            'PF', 'PREFIXADO',  5.00, 2.53,  3, 36, 'Financiamento de bens duráveis (eletrodomésticos, móveis etc.).')
+AS novo
+ON DUPLICATE KEY UPDATE
+  nome = novo.nome, modalidade_bcb = novo.modalidade_bcb, publico = novo.publico,
+  regime_indexacao = novo.regime_indexacao, teto_taxa_mes = novo.teto_taxa_mes,
+  taxa_referencia_bcb_mes = novo.taxa_referencia_bcb_mes, prazo_min_meses = novo.prazo_min_meses,
+  prazo_max_meses = novo.prazo_max_meses, descricao = novo.descricao, ativo = TRUE;
 
--- CREDITO_PESSOAL_CONSIGNE_INSS
-('CREDITO_PESSOAL_CONSIGNE_INSS', 'A', 801, 1000, 1.65, 21.70, 'Risco Excelente'),
-('CREDITO_PESSOAL_CONSIGNE_INSS', 'B', 601, 800, 1.75, 23.14, 'Risco Bom'),
-('CREDITO_PESSOAL_CONSIGNE_INSS', 'C', 401, 600, 1.89, 25.18, 'Risco Médio'),
-('CREDITO_PESSOAL_CONSIGNE_INSS', 'D', 201, 400, 2.05, 27.57, 'Risco Alto'),
-('CREDITO_PESSOAL_CONSIGNE_INSS', 'E', 0, 200, NULL, NULL, 'Reprovado por Risco'),
-
--- CREDITO_PESSOAL_CONSIGNE_PUBLICO
-('CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'A', 801, 1000, 1.70, 22.42, 'Risco Excelente'),
-('CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'B', 601, 800, 1.85, 24.60, 'Risco Bom'),
-('CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'C', 401, 600, 2.05, 27.57, 'Risco Médio'),
-('CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'D', 201, 400, 2.30, 31.37, 'Risco Alto'),
-('CREDITO_PESSOAL_CONSIGNE_PUBLICO', 'E', 0, 200, NULL, NULL, 'Reprovado por Risco'),
-
--- CREDITO_PESSOAL_CONSIGNE_PRIVADO
-('CREDITO_PESSOAL_CONSIGNE_PRIVADO', 'A', 801, 1000, 2.20, 29.84, 'Risco Excelente'),
-('CREDITO_PESSOAL_CONSIGNE_PRIVADO', 'B', 601, 800, 2.60, 36.07, 'Risco Bom'),
-('CREDITO_PESSOAL_CONSIGNE_PRIVADO', 'C', 401, 600, 2.95, 41.75, 'Risco Médio'),
-('CREDITO_PESSOAL_CONSIGNE_PRIVADO', 'D', 201, 400, 3.40, 49.36, 'Risco Alto'),
-('CREDITO_PESSOAL_CONSIGNE_PRIVADO', 'E', 0, 200, NULL, NULL, 'Reprovado por Risco'),
-
--- VEICULOS_AUTOMOVEIS
-('VEICULOS_AUTOMOVEIS', 'A', 801, 1000, 1.45, 18.89, 'Risco Excelente'),
-('VEICULOS_AUTOMOVEIS', 'B', 601, 800, 1.80, 23.87, 'Risco Bom'),
-('VEICULOS_AUTOMOVEIS', 'C', 401, 600, 2.40, 32.92, 'Risco Médio'),
-('VEICULOS_AUTOMOVEIS', 'D', 201, 400, 3.20, 45.93, 'Risco Alto'),
-('VEICULOS_AUTOMOVEIS', 'E', 0, 200, NULL, NULL, 'Reprovado por Risco'),
-
--- IMOBILIARIO_TP_TR
-('IMOBILIARIO_TP_TR', 'A', 801, 1000, 0.82, 10.30, 'Risco Excelente'),
-('IMOBILIARIO_TP_TR', 'B', 601, 800, 0.92, 11.61, 'Risco Bom'),
-('IMOBILIARIO_TP_TR', 'C', 401, 600, 1.05, 13.35, 'Risco Médio'),
-('IMOBILIARIO_TP_TR', 'D', 201, 400, 1.25, 16.08, 'Risco Alto'),
-('IMOBILIARIO_TP_TR', 'E', 0, 200, NULL, NULL, 'Reprovado por Risco')
-AS novos_dados
-ON DUPLICATE KEY UPDATE 
-  score_min = novos_dados.score_min,
-  score_max = novos_dados.score_max,
-  taxa_mes = novos_dados.taxa_mes,
-  taxa_ano = novos_dados.taxa_ano;
+-- ---------------------------------------------------------------------
+-- 2) Faixas de juros — 6 modalidades x 5 faixas = 30 linhas.
+--    Limites de score iguais aos da API: A 800-1000, B 600-799, C 400-599,
+--    D 200-399, E 0-199. Faixa E = recusado (taxa NULL).
+-- ---------------------------------------------------------------------
+INSERT INTO faixas_juros
+  (modalidade_codigo, faixa, score_min, score_max, taxa_mes, taxa_ano, descricao)
+VALUES
+  -- CREDITO_PESSOAL: base 4,50 / teto 12,00
+  ('CREDITO_PESSOAL',    'A', 800, 1000, 4.50,  69.59, 'Risco muito baixo'),
+  ('CREDITO_PESSOAL',    'B', 600,  799, 5.00,  79.59, 'Risco baixo'),
+  ('CREDITO_PESSOAL',    'C', 400,  599, 5.50,  90.12, 'Risco médio'),
+  ('CREDITO_PESSOAL',    'D', 200,  399, 6.50, 112.91, 'Risco alto'),
+  ('CREDITO_PESSOAL',    'E',   0,  199, NULL,   NULL, 'Recusado: score abaixo do mínimo'),
+  -- CONSIGNADO_INSS: base 1,60 / teto 1,85 (teto atua em B, C e D)
+  ('CONSIGNADO_INSS',    'A', 800, 1000, 1.60,  20.98, 'Risco muito baixo'),
+  ('CONSIGNADO_INSS',    'B', 600,  799, 1.85,  24.60, 'Risco baixo'),
+  ('CONSIGNADO_INSS',    'C', 400,  599, 1.85,  24.60, 'Risco médio'),
+  ('CONSIGNADO_INSS',    'D', 200,  399, 1.85,  24.60, 'Risco alto'),
+  ('CONSIGNADO_INSS',    'E',   0,  199, NULL,   NULL, 'Recusado: score abaixo do mínimo'),
+  -- CONSIGNADO_PUBLICO: base 1,60 / teto 2,50 (teto atua em C e D)
+  ('CONSIGNADO_PUBLICO', 'A', 800, 1000, 1.60,  20.98, 'Risco muito baixo'),
+  ('CONSIGNADO_PUBLICO', 'B', 600,  799, 2.10,  28.32, 'Risco baixo'),
+  ('CONSIGNADO_PUBLICO', 'C', 400,  599, 2.50,  34.49, 'Risco médio'),
+  ('CONSIGNADO_PUBLICO', 'D', 200,  399, 2.50,  34.49, 'Risco alto'),
+  ('CONSIGNADO_PUBLICO', 'E',   0,  199, NULL,   NULL, 'Recusado: score abaixo do mínimo'),
+  -- CONSIGNADO_PRIVADO: base 2,80 / teto 4,50 (teto atua em D)
+  ('CONSIGNADO_PRIVADO', 'A', 800, 1000, 2.80,  39.29, 'Risco muito baixo'),
+  ('CONSIGNADO_PRIVADO', 'B', 600,  799, 3.30,  47.64, 'Risco baixo'),
+  ('CONSIGNADO_PRIVADO', 'C', 400,  599, 3.80,  56.45, 'Risco médio'),
+  ('CONSIGNADO_PRIVADO', 'D', 200,  399, 4.50,  69.59, 'Risco alto'),
+  ('CONSIGNADO_PRIVADO', 'E',   0,  199, NULL,   NULL, 'Recusado: score abaixo do mínimo'),
+  -- VEICULOS: base 1,50 / teto 3,00 (teto atua em D)
+  ('VEICULOS',           'A', 800, 1000, 1.50,  19.56, 'Risco muito baixo'),
+  ('VEICULOS',           'B', 600,  799, 2.00,  26.82, 'Risco baixo'),
+  ('VEICULOS',           'C', 400,  599, 2.50,  34.49, 'Risco médio'),
+  ('VEICULOS',           'D', 200,  399, 3.00,  42.58, 'Risco alto'),
+  ('VEICULOS',           'E',   0,  199, NULL,   NULL, 'Recusado: score abaixo do mínimo'),
+  -- OUTROS_BENS: base 2,20 / teto 5,00
+  ('OUTROS_BENS',        'A', 800, 1000, 2.20,  29.84, 'Risco muito baixo'),
+  ('OUTROS_BENS',        'B', 600,  799, 2.70,  37.67, 'Risco baixo'),
+  ('OUTROS_BENS',        'C', 400,  599, 3.20,  45.93, 'Risco médio'),
+  ('OUTROS_BENS',        'D', 200,  399, 4.20,  63.84, 'Risco alto'),
+  ('OUTROS_BENS',        'E',   0,  199, NULL,   NULL, 'Recusado: score abaixo do mínimo')
+AS novo
+ON DUPLICATE KEY UPDATE
+  score_min = novo.score_min, score_max = novo.score_max,
+  taxa_mes = novo.taxa_mes, taxa_ano = novo.taxa_ano, descricao = novo.descricao;
